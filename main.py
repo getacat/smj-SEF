@@ -80,7 +80,7 @@ modelname = log_items + '.model'
 
 
 ############################################################################################################## model zoo and dataset path
-datapath = '/path/to/your/dataset'
+datapath = ''
 modelzoopath = '/path/to/the/vanilla/resnet/models'
 sys.path.append(modelzoopath)
 datasetpath = os.path.join(datapath, datasetname)
