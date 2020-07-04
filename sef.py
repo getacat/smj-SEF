@@ -7,12 +7,12 @@ import torch.nn.functional as torchf
 from utils.misc import SoftSigmoid
 
 
+# 使用ResNet的backbone构建了自己的网络
 #device = torch.device("cuda:1" if torch.cuda.is_available() > 0 else "cpu")
-eps = torch.finfo().eps
+eps = torch.finfo().eps  # 1 + eps = 1.0
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2']
-
 
 
 model_urls = {
@@ -43,21 +43,22 @@ class LocalMaxGlobalMin(nn.Module):
 
     def __init__(self, rho, nchannels, nparts=1, device='cpu'):
         super(LocalMaxGlobalMin, self).__init__()
-        self.nparts = nparts
+        self.nparts = nparts  # 分成nparts个语义组
         self.device = device
-        self.nchannels = nchannels
-        self.rho = rho      
+        self.nchannels = nchannels  # 特征的总通道数
+        self.rho = rho  #### 这是什么
 
         
-        nlocal_channels_norm = nchannels // self.nparts
-        reminder = nchannels % self.nparts
-        nlocal_channels_last = nlocal_channels_norm
-        if reminder != 0:
-            nlocal_channels_last = nlocal_channels_norm + reminder
+        nlocal_channels_norm = nchannels // self.nparts  # 每个组里有多少个通道
+        reminder = nchannels % self.nparts  # 余数
+        nlocal_channels_last = nlocal_channels_norm  # 最后一组的channel数
+        if reminder != 0:  # 如果通道不能均分
+            nlocal_channels_last = nlocal_channels_norm + reminder  # 余下的那几层放在最后一组里
         
         # seps records the indices partitioning feature channels into separate parts
-        seps = []
-        sep_node = 0
+
+        seps = []  # seps保存分割通道的节点
+        sep_node = 0  # 节点
         for i in range(self.nparts):
             if i != self.nparts-1:
                 sep_node += nlocal_channels_norm                
@@ -70,17 +71,17 @@ class LocalMaxGlobalMin(nn.Module):
 
 
     def forward(self, x):  
-        x = x.pow(2)
-        intra_x = []
-        inter_x = []
+        x = x.pow(2)  # tensor里每个元素平方
+        intra_x = []  # 组内的相关度
+        inter_x = []  # 组间相关度
         for i in range(self.nparts):
             if i == 0:        
                 intra_x.append((1 - x[:, :self.seps[i], :self.seps[i]]).mean()) 
             else:              
-                intra_x.append((1 - x[:, self.seps[i-1]:self.seps[i], self.seps[i-1]:self.seps[i]]).mean())
-                inter_x.append(x[:, self.seps[i-1]:self.seps[i], :self.seps[i-1]].mean())
-        
-        loss = self.rho * 0.5 * (sum(intra_x) / self.nparts + sum(inter_x) / (self.nparts*(self.nparts-1)/2)) 
+                intra_x.append((1 - x[:, self.seps[i-1]:self.seps[i], self.seps[i-1]:self.seps[i]]).mean())  # 1-group内相关度，要小
+                inter_x.append(x[:, self.seps[i-1]:self.seps[i], :self.seps[i-1]].mean())  # group之间的相似度，要小
+        # 感觉和论文里写的不一样，这里是group内部和group之间的相关度的平均和
+        loss = self.rho * 0.5 * (sum(intra_x) / self.nparts + sum(inter_x) / (self.nparts*(self.nparts-1)/2))
                  
 
         return loss
@@ -208,14 +209,15 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1,1))
 
+## ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
         if self.attention:            
-            nfeatures = 512 * block.expansion            
+            nfeatures = 512 * block.expansion  # 总通道数量
             nlocal_channels_norm = nfeatures // self.nparts
             reminder = nfeatures % self.nparts
             nlocal_channels_last = nlocal_channels_norm
             if reminder != 0:
                 nlocal_channels_last = nlocal_channels_norm + reminder
-            fc_list = []
+            fc_list = []  # 保存的是每一个group分类的的全连接层的形状
             separations = []
             sep_node = 0
             for i in range(self.nparts):
@@ -227,12 +229,13 @@ class ResNet(nn.Module):
                     sep_node += nlocal_channels_last
                     fc_list.append(nn.Linear(nlocal_channels_last, num_classes))
                 separations.append(sep_node)
-            self.fclocal = nn.Sequential(*fc_list)
+            self.fclocal = nn.Sequential(*fc_list)  # 一个容器，保存每个group的全连接层
             self.separations = separations 
-            self.fc = nn.Linear(512*block.expansion, num_classes) 
+            self.fc = nn.Linear(512*block.expansion, num_classes)  # 定义全连接层的输入输出形状
 
         else:            
             self.fc = nn.Linear(512 * block.expansion, num_classes)
+## ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -286,34 +289,38 @@ class ResNet(nn.Module):
         x = self.layer3(x) 
         x = self.layer4(x)
 
+## ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
         if self.attention:
 
             nsamples, nchannels, height, width = x.shape
         
-            xview = x.view(nsamples, nchannels, -1)
+            xview = x.view(nsamples, nchannels, -1)  # 更改形状，把每一个channel拉成条
+            # dim为int时求向量的范式（dim=-1什么意思），keepdim：是否保持矩阵的二维特性
             xnorm = xview.div(xview.norm(dim=-1, keepdim=True)+eps)
-            xcosin = torch.bmm(xnorm, xnorm.transpose(-1, -2))                               
-            
+            # bmm：两个tensor的对应channel进行矩阵乘法，得到的是nsamples*nchannels形状的矩阵
+            xcosin = torch.bmm(xnorm, xnorm.transpose(-1, -2))  # 相关性矩阵
+
 
             attention_scores = []
+            # 这里将特征按照之前划分的节点，分成nparts， xx是每一个part
             for i in range(self.nparts):
                 if i == 0:
                     xx = x[:, :self.separations[i]]
                 else:
                     xx = x[:, self.separations[i-1]:self.separations[i]]
-                xx_pool = self.avgpool(xx).flatten(1)
-                attention_scores.append(self.fclocal[i](xx_pool))
-            xlocal = torch.stack(attention_scores, dim=0)
+                xx_pool = self.avgpool(xx).flatten(1)  # 对每一个part平均池化并拉成向量
+                attention_scores.append(self.fclocal[i](xx_pool))  # 保存每一个part的全连接层输出
+            xlocal = torch.stack(attention_scores, dim=0)  # part全连接层输出叠在一起
 
-            xmaps = x.clone().detach()
+            xmaps = x.clone().detach()  # 复制最后一层的feature（具体特性不懂）
             
             # for global
-            xpool = self.avgpool(x)
+            xpool = self.avgpool(x)  # 最后一层feature的平均池化
             xpool = torch.flatten(xpool, 1)
-            xglobal = self.fc(xpool)
+            xglobal = self.fc(xpool)  # 全局全连接层
 
             
-            return xglobal, xlocal, xcosin, xmaps
+            return xglobal, xlocal, xcosin, xmaps  # 全局全连接层，各part全连接层，相关性矩阵，最后一层的feature
         else:
             # for original resnet outputs
             x = self.avgpool(x)
@@ -321,7 +328,7 @@ class ResNet(nn.Module):
             x = self.fc(x)
 
             return x
-
+## ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 
 def _resnet(arch, block, layers, pretrained, progress, model_dir=None, **kwargs):

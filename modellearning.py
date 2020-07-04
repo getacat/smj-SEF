@@ -9,6 +9,7 @@ import os
 import torch.utils.tensorboard as tb
 
 
+# 模型优化的方法
 softmax = nn.Softmax(dim=-1)
 logsoftmax = nn.LogSoftmax(dim=-1)
 kldiv = nn.KLDivLoss(reduction='batchmean')
@@ -93,7 +94,7 @@ def train(model, dataloader, criterion, optimizer, scheduler, datasetname=None, 
                     if attention_flag:
                         # outputs are logits from linear models
                         xglobal, xlocal, xcosin, _ = model(inputs)
-                        probs = softmax(xglobal)                    
+                        probs = softmax(xglobal)  #
                         cls_loss = criterion[0](xglobal, labels)
 
                         ############################################################## prediction

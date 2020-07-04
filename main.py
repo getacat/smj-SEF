@@ -173,9 +173,9 @@ model.cuda(device)
 cls_loss = nn.CrossEntropyLoss()
 
 # semantic group loss
-lmgm_loss = sef.LocalMaxGlobalMin(rho=lmgm, nchannels=512*4, nparts=nparts, device=device)
+lmgm_loss = sef.LocalMaxGlobalMin(rho=lmgm, nchannels=512*4, nparts=nparts, device=device)  # 自定义的loss
 
-criterion = [cls_loss, lmgm_loss]
+criterion = [cls_loss, lmgm_loss]  # 保存两个计算loss的函数
 
 
 
@@ -198,7 +198,7 @@ print("\n{}\n".format(indfile), file=logfile)
 
 
 model, train_rsltparams = modellearning.train(
-    model, dataloader, criterion, optimizer, scheduler, 
+    model, dataloader, criterion, optimizer, scheduler,   # 模型， 数据， loss的计算方法， 优化器， lr变化率
     datasetname=datasetname, isckpt=isckpt, epochs=epochs, 
     networkname=networkname, writer=writer, device=device, maxent_flag=maxent_flag,
     soft_weights=soft, entropy_weights=entropy, logfile=logfile)
